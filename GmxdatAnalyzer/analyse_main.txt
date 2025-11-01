@@ -1,0 +1,30 @@
+echo "开始执行结构分析..."
+python analyzers/pre/StructAnalyzer.py -f *.gro -s structdef/domain_def.txt -o results/struct_report.txt -pm -opm pymol/pymol_colorizer.txt -ndx run -ondx data/struct_analyse.ndx
+echo "✓ 结构分析已完成"
+
+echo "开始生成索引列表..."
+python analyzers/pre/NdxLister.py -i data/struct_analyse.ndx -o data/struct_ndxlist.txt
+echo "✓ 索引列表生成已完成"
+
+echo "开始计算RMSD..."
+python analyzers/GmxAnalyzer.py -t rmsd -f *.xtc -s *.tpr -n data/struct_analyse.ndx -nl data/struct_ndxlist.txt -o results/ -v pro-h bb -j 12
+echo "✓ RMSD计算已完成"
+
+echo "开始计算RMSF..."
+python analyzers/GmxAnalyzer.py -t rmsf -f *.xtc -s *.tpr -n data/struct_analyse.ndx -nl data/struct_ndxlist.txt -o results/ -v pro-h -g chains --res -j 12
+echo "✓ RMSF计算已完成"
+
+echo "开始提取指定坐标..."
+python analyzers/GmxAnalyzer.py -t coords -f *.xtc -s *.tpr -n data/struct_analyse.ndx -nl data/struct_ndxlist.txt -o results/ -v bb -g chains fragments -j 8
+echo "✓ 坐标提取已完成"
+
+echo "开始分析二级结构..."
+python analyzers/GmxAnalyzer.py -t ss -f *.xtc -s *.tpr -n data/struct_analyse.ndx -nl data/struct_ndxlist.txt -o results/ -v pro -g chains fragments --hmode gromacs --no-clear -j 8
+echo "✓ 二级结构分析已完成"
+
+echo "开始计算SASA..."
+python analyzers/GmxAnalyzer.py -t sasa -f *.xtc -s *.tpr -n data/struct_analyse.ndx -nl data/struct_ndxlist.txt -o results/ -v pro -g chains fragments -j 12
+echo "✓ SASA计算已完成"
+
+echo "所有分析步骤已完成！"
+

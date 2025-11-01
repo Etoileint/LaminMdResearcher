@@ -1,0 +1,83 @@
+#!/bin/bash
+# Coded by ★Magichoco★
+
+# 用户参数设置
+num_stages=$1               # 总阶段数
+total_time=$2               # 总时长（ns）
+
+# 计算参数（使用bc处理浮点运算）
+stage_time=$(echo "scale=4; $total_time / $num_stages" | bc)
+
+# 时间步长参数（0.002 ps = 0.000002 ns）
+dt=0.000002
+nsteps_per_stage=$(echo "$stage_time / $dt" | bc)
+
+# 输出计算结果验证
+cat << EOF
+★==========★ 这里是参数汇总哦喵~ ★==========★
+总阶段数:          ${num_stages}
+总时长:            ${total_time} ns
+单阶段时长:        ${stage_time} ns
+时间步长:          ${dt} ns
+每阶段模拟步数:    ${nsteps_per_stage}
+EOF
+
+# 定义模板内容（移除了拉力相关设置）
+template_content=$(cat << 'EOF'
+integrator              = md
+dt                      = 0.002
+nsteps                  = 0
+nstxout-compressed      = 5000
+nstxout                 = 0
+nstvout                 = 0
+nstfout                 = 0
+nstcalcenergy           = 100
+nstenergy               = 1000
+nstlog                  = 1000
+compressed-x-grps 	= SOLU
+;
+cutoff-scheme           = Verlet
+nstlist                 = 20
+vdwtype                 = Cut-off
+vdw-modifier            = Force-switch
+rvdw_switch             = 1.0
+rvdw                    = 1.2
+rlist                   = 1.2
+rcoulomb                = 1.2
+coulombtype             = PME
+;
+tcoupl                  = v-rescale
+tc_grps                 = SOLU SOLV
+tau_t                   = 1.0 1.0
+ref_t                   = 303.15 303.15
+;
+pcoupl                  = C-rescale
+pcoupltype              = isotropic
+tau_p                   = 5.0
+compressibility         = 4.5e-5
+ref_p                   = 1.0
+;
+constraints             = h-bonds
+constraint_algorithm    = LINCS
+continuation            = yes
+;
+nstcomm                 = 100
+comm_mode               = linear
+comm_grps               = SOLU SOLV
+EOF
+)
+
+# 生成阶段文件
+for ((i=1; i<=num_stages; i++)); do
+    filename="step5.${i}_production.mdp"
+    
+    # 生成MD参数文件
+    echo "$template_content" | sed \
+        -e "s/^nsteps.*/nsteps = $nsteps_per_stage/" \
+        > $filename
+
+    echo "亲爱的Magichoco主人~ $filename已生成喵~"
+done
+
+echo "亲爱的Magichoco主人~ ${num_stages}个生产阶段文件生成完成喵~"
+

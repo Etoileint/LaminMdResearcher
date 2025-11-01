@@ -1,0 +1,95 @@
+#!/bin/csh -f
+
+# 脚本名称: remove_solvent_ions.csh
+# 功能: 从.gro文件中删除水分子(TIP3/SOL)和离子(SOD/NA, CLA/CL)
+# 用法: ./SolventRemover -i [输入文件] -o [输出文件]
+
+# 设置默认值
+set input_file = ""
+set output_file = ""
+set default_suffix = "_no_solvent"
+
+# 解析命令行参数
+while ($#argv > 0)
+    switch ($argv[1])
+        case -i:
+            shift argv
+            if ($#argv > 0) set input_file = $argv[1]
+            shift argv
+            breaksw
+        case -o:
+            shift argv
+            if ($#argv > 0) set output_file = $argv[1]
+            shift argv
+            breaksw
+        case -*:
+            echo "未知选项: $argv[1]"
+            goto usage
+            breaksw
+        default:
+            set input_file = $argv[1]
+            shift argv
+            breaksw
+    endsw
+end
+
+# 检查输入文件
+if ($input_file == "") then
+    echo "错误: 未指定输入文件"
+    goto usage
+endif
+
+if (! -e $input_file) then
+    echo "错误: 输入文件 '$input_file' 不存在"
+    exit 1
+endif
+
+# 设置默认输出文件名
+if ($output_file == "") then
+    set base = `basename $input_file .gro`
+    set output_file = "${base}${default_suffix}.gro"
+endif
+
+# 处理文件
+# 保留不包含TIP3、SOD或CLA的行
+# 注意保留前两行(标题和原子数)和最后一行(盒子尺寸)
+set temp_file = `mktemp`
+
+# 处理第一行(标题)
+head -n 1 $input_file > $temp_file
+
+# 处理第二行(原子数) - 我们需要在过滤后更新这个数字
+# 暂时写入原始值，后面会更新
+head -n 2 $input_file | tail -n 1 >> $temp_file
+
+# 处理原子坐标部分(从第3行到倒数第二行)
+# 过滤掉包含TIP3/SOL、SOD/NA或CLA/CL的行
+set start_line = 3
+set end_line = `wc -l < $input_file`
+@ end_line -= 1
+
+if ($start_line <= $end_line) then
+    sed -n "${start_line},${end_line}p" $input_file | grep -v -E "TIP3|SOD|CLA|SOL|NA|CL" >> $temp_file
+endif
+
+# 处理最后一行(盒子尺寸)
+tail -n 1 $input_file >> $temp_file
+
+# 更新原子数
+set num_atoms = `sed -n '3,$p' $temp_file | grep -v -E "TIP3|SOD|CLA|SOL|NA|CL" | wc -l`
+@ num_atoms -= 1
+sed -i "2s/.*/$num_atoms/" $temp_file
+
+# 将临时文件移动到输出文件
+mv $temp_file $output_file
+
+echo "处理完成: 输出文件 '$output_file'"
+exit 0
+
+usage:
+echo "用法: $0 [-i 输入文件] [-o 输出文件]"
+echo "选项:"
+echo "  -i  指定输入.gro文件路径(默认当前目录)"
+echo "  -o  指定输出.gro文件路径(默认原文件名加'_no_solvent'后缀)"
+exit 1
+

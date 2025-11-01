@@ -1,0 +1,69 @@
+#!/bin/bash
+
+# 设置Python脚本路径
+PYTHON_SCRIPT="./analyzers/final/LengthAnalyzer3Dv4.1.py"
+
+# 检查Python脚本是否存在
+if [ ! -f "$PYTHON_SCRIPT" ]; then
+    echo "错误: 找不到Python脚本 $PYTHON_SCRIPT"
+    exit 1
+fi
+
+# 检查results/length目录是否存在
+if [ ! -d "results/length" ]; then
+    echo "错误: 找不到results/length目录"
+    exit 1
+fi
+
+# 查找所有_coords.xvg文件
+echo "正在查找所有_coords.xvg文件..."
+find results/length -name "*_coords.xvg" -type f | while read -r input_file; do
+    echo "处理文件: $input_file"
+    
+    # 获取文件所在目录
+    file_dir=$(dirname "$input_file")
+    
+    # 获取不带路径的文件名
+    filename=$(basename "$input_file")
+    
+    # 去除_coords后缀得到基础文件名
+    base_name="${filename%_coords.xvg}"
+    
+    # 检查是否成功去除后缀
+    if [ "$base_name" = "$filename" ]; then
+        echo "警告: 文件 $filename 不符合命名规范，跳过"
+        continue
+    fi
+    
+    # 构造输出文件路径
+    length_output="$file_dir/${base_name}_length.xvg"
+    plot_output="$file_dir/${base_name}_lenplot.svg"
+    anim_output="$file_dir/${base_name}_anim.html"
+    curve_output="$file_dir/${base_name}_curvecoords.npz"
+    
+    echo "输出文件:"
+    echo "  - 长度数据: $length_output"
+    echo "  - 时程图: $plot_output"
+    echo "  - 动画文件: $anim_output"
+    echo "  - 曲线坐标: $curve_output"
+    
+    # 执行Python脚本
+    python3 "$PYTHON_SCRIPT" \
+        -i "$input_file" \
+        -o "$length_output" "$plot_output" "$anim_output" \
+        -w 12 \
+        -cp 10 \
+        -fs 100 \
+        -a
+    
+    # 检查执行是否成功
+    if [ $? -eq 0 ]; then
+        echo "✓ 成功处理: $filename"
+    else
+        echo "✗ 处理失败: $filename"
+    fi
+    echo "----------------------------------------"
+done
+
+echo "所有文件处理完成！"
+

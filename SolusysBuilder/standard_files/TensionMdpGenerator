@@ -1,0 +1,128 @@
+#!/bin/bash
+# Coded by ★Magichoco★
+
+# 用户参数设置
+# 接收主脚本传递的参数
+target_force=$1             # 初始力大小（pN）
+force_increase_rate=$2      # 力变化速率（pN/ns）
+num_stages=$3               # 总阶段数
+total_time=$4               # 总时长（ns）
+
+# 计算参数（使用bc处理浮点运算）
+target_force_k=$(echo "$target_force * 0.602214076" | bc -l)
+total_time_for_increase=$(echo "$target_force / $force_increase_rate" | bc -l)
+stage_time_for_increase=$(echo "scale=4; $total_time_for_increase / $num_stages" | bc)
+last_stage_time_for_stability=$(echo "$total_time - $total_time_for_increase + $stage_time_for_increase" | bc -l)
+
+# 检查总时间是否足够
+if (( $(echo "$total_time < $total_time_for_increase" | bc -l) )); then
+    echo "错误：总时间 ${total_time} ns 小于力变化所需时间 ${total_time_for_increase} ns" >&2
+    echo "请调整总时间或力变化速率参数" >&2
+    exit 1
+fi
+
+# 时间步长参数（0.002 ps = 0.000002 ns）
+dt=0.000002
+nsteps_per_stage=$(echo "$stage_time_for_increase / $dt" | bc)
+nsteps_for_last_stage=$(echo "$last_stage_time_for_stability / $dt" | bc)
+
+# 输出计算结果验证
+cat << EOF
+★==========★ 这里是参数汇总哦喵~ ★==========★
+目标力大小:        ${target_force} pN (${target_force_k} kJ/mol/nm)
+力变化速率:        ${force_increase_rate} pN/ns
+总阶段数:          ${num_stages}
+总时长:            ${total_time} ns
+☆------------------------------------------☆
+力变化总时长:      ${total_time_for_increase} ns
+单阶段变化时长:    ${stage_time_for_increase} ns
+最终稳定阶段时长:  ${last_stage_time_for_stability} ns
+时间步长:          ${dt} ns
+☆------------------------------------------☆
+每阶段模拟步数:    ${nsteps_per_stage}
+最终阶段模拟步数:  ${nsteps_for_last_stage}
+EOF
+
+# 自动计算递减量
+increment=$(echo "scale=2; $target_force_k / $num_stages" | bc)
+
+# 定义模板内容（这里直接嵌入原始模板）
+template_content=$(cat << 'EOF'
+integrator              = md
+dt                      = 0.002
+nsteps                  = 0
+nstxout-compressed      = 5000
+nstxout                 = 0
+nstvout                 = 0
+nstfout                 = 0
+nstcalcenergy           = 100
+nstenergy               = 1000
+nstlog                  = 1000
+compressed-x-grps 	= SOLU
+;
+pull-print-com          = yes
+pull-nstxout            = 1000
+pull-nstfout            = 1000
+;
+cutoff-scheme           = Verlet
+nstlist                 = 20
+vdwtype                 = Cut-off
+vdw-modifier            = Force-switch
+rvdw_switch             = 1.0
+rvdw                    = 1.2
+rlist                   = 1.2
+rcoulomb                = 1.2
+coulombtype             = PME
+;
+tcoupl                  = v-rescale
+tc_grps                 = SOLU SOLV
+tau_t                   = 1.0 1.0
+ref_t                   = 303.15 303.15
+;
+pcoupl                  = Parrinello-Rahman
+pcoupltype              = anisotropic
+tau_p                   = 5.0
+compressibility         = 0 0 4.5e-5 0 0 0
+ref_p                   = 1.0 1.0 1.0 0 0 0
+;
+constraints             = h-bonds
+constraint_algorithm    = LINCS
+continuation            = yes
+;
+nstcomm                 = 100
+comm_mode               = linear
+comm_grps               = SOLU SOLV
+;
+pull                    = yes
+pull-ncoords            = 1
+pull-ngroups            = 2
+pull-group1-name        = LBB
+pull-group2-name        = RBB
+pull-coord1-type        = constant-force
+pull-coord1-geometry    = direction-periodic
+pull-coord1-vec         = -1 0 0
+pull-coord1-dim         = Y N N
+pull-coord1-k           = 0
+pull-coord1-groups      = 1 2
+;pull-coord1-start      = yes
+EOF
+)
+
+# 生成阶段文件
+for ((i=1; i<=num_stages; i++)); do
+    filename="step5.${i}_tension.mdp"
+
+    # 计算当前力值（保留两位小数）
+    current_force=$(echo "scale=2; $i*$increment" | bc)
+        
+    # 生成含拉力参数的文件
+    echo "$template_content" | sed \
+        -e "s/^nsteps.*/nsteps = $nsteps_per_stage/" \
+        -e "s/^\(pull-coord1-k[[:space:]]*=[[:space:]]*\)[0-9.]*/\1$current_force/" \
+        > $filename
+
+    echo "亲爱的Magichoco主人~ $filename已生成喵~"
+done
+
+echo "亲爱的Magichoco主人~ ${num_stages}个阶段文件生成完成喵~"
+

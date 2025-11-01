@@ -1,0 +1,122 @@
+#!/bin/csh
+
+# PEEKME - 实时检查模拟进度并合并已完成轨迹
+# 功能：自动检测已完成步骤的轨迹文件，生成临时合并轨迹用于观测
+# 注意：不会处理正在进行的模拟步骤，避免干扰运行中的模拟
+
+# 定义前缀和步骤名称（与原脚本保持一致）
+set prod1_prefix = step5_tension
+set prod2_prefix = step6_relaxation
+set prod1_step   = step5
+set prod2_step   = step6
+
+# 初始化轨迹文件列表
+set traj = ( zero.xtc )
+
+# 检测拉伸阶段已完成轨迹
+if (-e ${prod1_step}_1.tpr) then
+    echo "\n====== 检测拉伸阶段已完成轨迹 ======"
+    
+    # 获取最大阶段数（通过检查存在的tpr文件）
+    set max_tension_stages = `ls ${prod1_step}_*.tpr | wc -l`
+    
+    set cnt_t = 1
+    while ($cnt_t <= $max_tension_stages)
+        set istep = ${prod1_step}_${cnt_t}
+        
+        if (-e ${istep}.cplchk) then
+            echo "检测到已完成轨迹: ${istep}.xtc"
+            set traj = ( $traj ${istep}.xtc )
+        else
+            echo "跳过未完成步骤: ${istep}"
+        endif
+        
+        @ cnt_t++
+    end
+endif
+
+# 检测松弛阶段已完成轨迹
+if (-e ${prod2_step}_1.tpr) then
+    echo "\n====== 检测松弛阶段已完成轨迹 ======"
+    
+    # 获取最大阶段数（通过检查存在的tpr文件）
+    set max_relaxation_stages = `ls ${prod2_step}_*.tpr | wc -l`
+    
+    set cnt_r = 1
+    while ($cnt_r <= $max_relaxation_stages)
+        set istep = ${prod2_step}_${cnt_r}
+        
+        if (-e ${istep}.cplchk) then
+            echo "检测到已完成轨迹: ${istep}.xtc"
+            set traj = ( $traj ${istep}.xtc )
+        else
+            echo "跳过未完成步骤: ${istep}"
+        endif
+        
+        @ cnt_r++
+    end
+endif
+
+# 处理轨迹文件列表
+set traj_list = ($traj)
+shift traj_list  # 移除初始的"zero.xtc"
+
+if ($#traj_list < 1) then
+    echo "\n错误：未找到已完成的轨迹文件"
+    exit 1
+endif
+
+# 创建临时目录存放处理后的轨迹
+set temp_dir = temp_traj_processing
+mkdir -p $temp_dir
+
+# 处理第一个文件
+set first_file = $traj_list[1]
+set processed_files = "$first_file"
+
+# 处理后续文件（跳过每段的第一帧）
+if ($#traj_list > 1) then
+    shift traj_list
+    foreach file ($traj_list)
+        set base = ${file:r}
+        set processed = ${temp_dir}/${base}_skip1.xtc
+        echo "\n正在处理 $file : 跳过第一帧..."
+        
+        gmx trjconv -f $file -o $processed -b 1 << END
+0
+END
+        
+        if (-e $processed) then
+            set processed_files = "$processed_files $processed"
+        else
+            echo "警告：处理 $file 失败"
+        endif
+    end
+endif
+
+# 合并处理后的轨迹
+echo "\n正在合并轨迹..."
+gmx trjcat -f $processed_files -o ${temp_dir}/combined_temp.xtc -cat
+
+# 进一步处理合并后的轨迹
+if (-e ${temp_dir}/combined_temp.xtc) then
+    echo "\n正在处理合并后的轨迹..."
+    
+    # 时间步长调整
+    gmx trjconv -f ${temp_dir}/combined_temp.xtc -o ${temp_dir}/combined_timestep.xtc -timestep 10
+    
+    # 轨迹修复处理
+    echo "1" | gmx trjconv -s ${prod1_step}_1.tpr -f ${temp_dir}/combined_timestep.xtc -o ${temp_dir}/combined_whole.xtc -pbc whole
+    echo "1" | gmx trjconv -s ${prod1_step}_1.tpr -f ${temp_dir}/combined_whole.xtc -o ${temp_dir}/combined_nojump.xtc -pbc nojump
+    echo -e "1\n1" | gmx trjconv -s ${prod1_step}_1.tpr -f ${temp_dir}/combined_nojump.xtc -o progress_check.xtc -center -pbc mol
+    
+    # 最终清理
+    rm -rf $temp_dir
+    
+    echo "\n临时观测轨迹生成完成: progress_check.xtc"
+    echo "注意：这只是一个临时文件，最终轨迹请等待全部模拟完成后使用原脚本生成"
+else
+    echo "\n错误：轨迹合并失败"
+    exit 1
+endif
+

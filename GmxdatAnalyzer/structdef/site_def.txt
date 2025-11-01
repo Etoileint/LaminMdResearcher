@@ -1,0 +1,4 @@
+# 序列定义文件格式: 前段序列/目标序列/后段序列/片段名/颜色
+# 使用单字母氨基酸代码
+# 特殊标记: N* = N端, C* = C端, - = 任意
+METPSQRRATRSGAQASSTPL/S/PTRITRLQEKE/Ser22/red
